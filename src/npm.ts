@@ -16,6 +16,7 @@ import { retrieveAndCacheChangelog } from './changelog'
 import { getConfig } from './config'
 import { logError } from './log'
 import { getNpmConfig } from './npmConfig'
+import { getDependencyInformation } from './packageJson'
 import { AsyncState, Dict, StrictDict } from './types'
 
 export interface NpmLoader<T> {
@@ -256,18 +257,18 @@ const isVersionIgnored = (version: VersionData, dependencyName: string, ignoredV
 }
 
 export const refreshPackageJsonData = (
-  packageJsonString: string,
-  packageJsonFilePath: string,
+  fileContents: string,
+  filePath: string,
 ): Promise<void>[] => {
   const cacheCutoff = new Date(new Date().getTime() - 1000 * 60 * 120) // 120 minutes
 
   try {
-    const json = JSON.parse(packageJsonString) as Record<string, unknown>
-    const groups = getConfig().dependencyGroups
     const dependencies: StrictDict<string, string> = {}
-    for (const group of groups) {
-      Object.assign(dependencies, collectGroupDependencies(getValueAtPath(json, group)))
-    }
+    getDependencyInformation(fileContents, filePath)
+      .flatMap((group) => group.deps)
+      .forEach((dependency) => {
+        dependencies[dependency.dependencyName] = dependency.currentVersion
+      })
 
     const promises = Object.entries(dependencies)
       .filter(([_dependencyName, version]) => {
@@ -287,7 +288,7 @@ export const refreshPackageJsonData = (
           cache.asyncstate === AsyncState.NotStarted ||
           (cache.item !== undefined && cache.item.date.getTime() < cacheCutoff.getTime())
         ) {
-          return fetchNpmData(dependencyName, packageJsonFilePath)
+          return fetchNpmData(dependencyName, filePath)
         } else {
           return npmCache[dependencyName]?.promise
         }
@@ -296,57 +297,9 @@ export const refreshPackageJsonData = (
 
     return promises
   } catch (_) {
-    console.warn(`Failed to parse package.json: ${packageJsonFilePath}`)
+    console.warn(`Failed to parse dependency file: ${filePath}`)
     return [Promise.resolve()]
   }
-}
-
-const getValueAtPath = (json: Record<string, unknown>, path: string): unknown => {
-  const segments = path
-    .split('.')
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0)
-
-  let current: unknown = json
-  for (const segment of segments) {
-    if (!isObjectRecord(current)) {
-      return undefined
-    }
-    current = current[segment]
-  }
-
-  return current
-}
-
-const collectGroupDependencies = (groupValue: unknown): StrictDict<string, string> => {
-  const dependencies: StrictDict<string, string> = {}
-  if (!isObjectRecord(groupValue)) {
-    return dependencies
-  }
-
-  for (const [dependencyName, versionOrCatalog] of Object.entries(groupValue)) {
-    if (typeof versionOrCatalog === 'string') {
-      dependencies[dependencyName] = versionOrCatalog
-      continue
-    }
-
-    // catalogs are objects containing named dependency maps.
-    if (!isObjectRecord(versionOrCatalog)) {
-      continue
-    }
-
-    for (const [catalogDependencyName, catalogVersion] of Object.entries(versionOrCatalog)) {
-      if (typeof catalogVersion === 'string') {
-        dependencies[catalogDependencyName] = catalogVersion
-      }
-    }
-  }
-
-  return dependencies
-}
-
-const isObjectRecord = (value: unknown): value is Record<string, unknown> => {
-  return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
 const fetchNpmData = (dependencyName: string, packageJsonPath: string) => {

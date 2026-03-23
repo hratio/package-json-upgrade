@@ -14,15 +14,26 @@ export interface Dependency {
   line: number
 }
 
-export const getDependencyFromLine = (jsonAsString: string, line: number) => {
-  const dependencies = getDependencyInformation(jsonAsString)
+export const getDependencyFromLine = (fileContents: string, line: number, fileName?: string) => {
+  const dependencies = getDependencyInformation(fileContents, fileName)
     .map((d) => d.deps)
     .flat()
 
   return dependencies.find((d) => d.line === line)
 }
 
-export const getDependencyInformation = (jsonAsString: string): DependencyGroups[] => {
+export const getDependencyInformation = (
+  fileContents: string,
+  fileName?: string,
+): DependencyGroups[] => {
+  if (isPnpmWorkspaceYamlFileName(fileName)) {
+    return getYamlDependencyInformation(fileContents)
+  }
+
+  return getJsonDependencyInformation(fileContents)
+}
+
+const getJsonDependencyInformation = (jsonAsString: string): DependencyGroups[] => {
   const tree = parseTree(jsonAsString)
 
   if (tree === undefined) {
@@ -108,6 +119,103 @@ function toPath(group: string): string[] {
     .filter((segment) => segment.length > 0)
 }
 
+const getYamlDependencyInformation = (yamlAsString: string): DependencyGroups[] => {
+  const groups = getConfig().dependencyGroups.map((group) => ({
+    raw: group,
+    path: toPath(group),
+  }))
+  const dependencyGroups = new Map<string, DependencyGroups>()
+  const pathStack: Array<{ indent: number; path: string[] }> = []
+
+  yamlAsString.split('\n').forEach((line, index) => {
+    const match = /^(\s*)(?:"([^"]+)"|'([^']+)'|([^:#][^:]*?)):\s*(.*?)\s*$/.exec(line)
+    if (match === null) {
+      return
+    }
+
+    const indent = match[1].length
+    const key = (match[2] ?? match[3] ?? match[4] ?? '').trim()
+    const rawValue = match[5] ?? ''
+
+    while (pathStack.length > 0 && pathStack[pathStack.length - 1].indent >= indent) {
+      pathStack.pop()
+    }
+
+    const currentPath = [...pathStack.flatMap((entry) => entry.path), key]
+
+    groups.forEach((group) => {
+      if (pathsEqual(currentPath, group.path) && !dependencyGroups.has(group.raw)) {
+        dependencyGroups.set(group.raw, {
+          startLine: index,
+          deps: [],
+        })
+      }
+    })
+
+    if (rawValue === '') {
+      pathStack.push({ indent, path: [key] })
+      return
+    }
+
+    const parentPath = currentPath.slice(0, -1)
+    const version = parseYamlScalarValue(rawValue)
+    if (version === undefined || version.startsWith('catalog:')) {
+      return
+    }
+
+    groups.forEach((group) => {
+      if (!startsWithPath(parentPath, group.path)) {
+        return
+      }
+
+      if (parentPath.length > group.path.length + 1) {
+        return
+      }
+
+      const dependencyGroup = dependencyGroups.get(group.raw)
+      if (dependencyGroup === undefined) {
+        return
+      }
+
+      dependencyGroup.deps.push({
+        dependencyName: key,
+        currentVersion: version,
+        line: index,
+      })
+    })
+  })
+
+  return Array.from(dependencyGroups.values())
+}
+
+const parseYamlScalarValue = (rawValue: string): string | undefined => {
+  const valueWithoutComment = rawValue.replace(/\s+#.*$/, '').trim()
+  if (valueWithoutComment === '' || valueWithoutComment === '|' || valueWithoutComment === '>') {
+    return undefined
+  }
+
+  if (
+    (valueWithoutComment.startsWith('"') && valueWithoutComment.endsWith('"')) ||
+    (valueWithoutComment.startsWith("'") && valueWithoutComment.endsWith("'"))
+  ) {
+    return valueWithoutComment.slice(1, -1)
+  }
+
+  if (valueWithoutComment.startsWith('{') || valueWithoutComment.startsWith('[')) {
+    return undefined
+  }
+
+  return valueWithoutComment
+}
+
+const startsWithPath = (path: string[], prefix: string[]) => {
+  return prefix.every((segment, index) => path[index] === segment)
+}
+
+const pathsEqual = (left: string[], right: string[]) => {
+  return left.length === right.length && startsWithPath(left, right)
+}
+
 // jsonc-parser gives offset in characters, so we have to translate it to line numbers
 // this currently does not respect CR-only line breaks... but no one uses that, right? Add it if someone complains.
 function offsetToLine(text: string, offset: number): number {
@@ -123,4 +231,22 @@ function offsetToLine(text: string, offset: number): number {
 export const isPackageJson = (document: vscode.TextDocument) => {
   // Is checking both slashes necessary? Test on linux and mac.
   return document.fileName.endsWith('\\package.json') || document.fileName.endsWith('/package.json')
+}
+
+export const isPnpmWorkspaceYaml = (document: vscode.TextDocument) => {
+  return isPnpmWorkspaceYamlFileName(document.fileName)
+}
+
+export const isSupportedDependencyFile = (document: vscode.TextDocument) => {
+  return isPackageJson(document) || isPnpmWorkspaceYaml(document)
+}
+
+const isPnpmWorkspaceYamlFileName = (fileName?: string) => {
+  if (fileName === undefined) {
+    return false
+  }
+
+  return (
+    fileName.endsWith('\\pnpm-workspace.yaml') || fileName.endsWith('/pnpm-workspace.yaml')
+  )
 }

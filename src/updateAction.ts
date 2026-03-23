@@ -3,7 +3,7 @@ import * as vscode from 'vscode'
 import { getChangelogUrl } from './changelog'
 import { OPEN_URL_COMMAND } from './extension'
 import { getCachedNpmData, getExactVersion, getPossibleUpgrades } from './npm'
-import { getDependencyFromLine, isPackageJson } from './packageJson'
+import { getDependencyFromLine, isSupportedDependencyFile } from './packageJson'
 import { replaceLastOccuranceOf } from './util/util'
 
 export class UpdateAction implements vscode.CodeActionProvider {
@@ -13,7 +13,7 @@ export class UpdateAction implements vscode.CodeActionProvider {
     document: vscode.TextDocument,
     range: vscode.Range,
   ): vscode.CodeAction[] | undefined {
-    if (isPackageJson(document) === false) {
+    if (isSupportedDependencyFile(document) === false) {
       return
     }
 
@@ -21,7 +21,7 @@ export class UpdateAction implements vscode.CodeActionProvider {
       return
     }
 
-    const dep = getDependencyFromLine(document.getText(), range.start.line)
+    const dep = getDependencyFromLine(document.getText(), range.start.line, document.fileName)
     if (dep === undefined) {
       return
     }

@@ -262,6 +262,53 @@ describe('packageJson', () => {
     })
   })
 
+  test('should support pnpm-workspace.yaml catalogs', () => {
+    setConfig({
+      ...getConfig(),
+      dependencyGroups: ['catalogs'],
+    })
+
+    const workspaceYaml = `packages:
+  - "packages/*"
+
+catalogs:
+  backend-runtime:
+    "@aws-sdk/client-dynamodb": 3.1009.0
+    pg: 8.20.0
+  frontend:
+    react: "^19.1.1"
+`
+
+    const result = getDependencyInformation(workspaceYaml, '/tmp/pnpm-workspace.yaml')
+    assert.deepStrictEqual(result, [
+      {
+        startLine: 3,
+        deps: [
+          {
+            dependencyName: '@aws-sdk/client-dynamodb',
+            currentVersion: '3.1009.0',
+            line: 5,
+          },
+          {
+            dependencyName: 'pg',
+            currentVersion: '8.20.0',
+            line: 6,
+          },
+          {
+            dependencyName: 'react',
+            currentVersion: '^19.1.1',
+            line: 8,
+          },
+        ],
+      },
+    ])
+
+    setConfig({
+      ...getConfig(),
+      dependencyGroups: ['dependencies', 'devDependencies'],
+    })
+  })
+
   test('should be able to correctly parse another simple package.json', () => {
     const packageJsonBuffer = readFileSync('./src/test-node/testdata/package-test2.json')
     const packageJson = packageJsonBuffer.toString()

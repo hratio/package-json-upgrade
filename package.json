@@ -26,7 +26,8 @@
   },
   "activationEvents": [
     "onLanguage:json",
-    "onLanguage:jsonc"
+    "onLanguage:jsonc",
+    "onLanguage:yaml"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -103,7 +104,7 @@
       },
       {
         "command": "package-json-upgrade.update-all",
-        "title": "Update all dependencies in the current package.json file"
+        "title": "Update all dependencies in the current supported file"
       }
     ]
   },

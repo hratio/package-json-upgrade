@@ -5,7 +5,11 @@ import { getConfig } from './config'
 import { decorateDiscreet, getDecoratorForUpdate, getUpdateDescription } from './decorations'
 import { getIgnorePattern, isDependencyIgnored } from './ignorePattern'
 import { getCachedNpmData, getPossibleUpgrades, refreshPackageJsonData } from './npm'
-import { DependencyGroups, getDependencyInformation, isPackageJson } from './packageJson'
+import {
+  DependencyGroups,
+  getDependencyInformation,
+  isSupportedDependencyFile,
+} from './packageJson'
 import { AsyncState } from './types'
 
 interface DecorationWrapper {
@@ -30,7 +34,7 @@ export const handleFileDecoration = (document: vscode.TextDocument) => {
     return
   }
 
-  if (!isPackageJson(document)) {
+  if (!isSupportedDependencyFile(document)) {
     return
   }
 
@@ -42,7 +46,7 @@ export const handleFileDecoration = (document: vscode.TextDocument) => {
 
 const loadDecoration = async (document: vscode.TextDocument, startTime: number) => {
   const text = document.getText()
-  const dependencyGroups = getDependencyInformation(text)
+  const dependencyGroups = getDependencyInformation(text, document.fileName)
 
   const textEditor = getTextEditorFromDocument(document)
   if (textEditor === undefined) {

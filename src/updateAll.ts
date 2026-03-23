@@ -2,7 +2,7 @@ import * as vscode from 'vscode'
 
 import { getIgnorePattern, isDependencyIgnored } from './ignorePattern'
 import { getCachedNpmData, getExactVersion, getLatestVersion } from './npm'
-import { getDependencyInformation, isPackageJson } from './packageJson'
+import { getDependencyInformation, isSupportedDependencyFile } from './packageJson'
 import { replaceLastOccuranceOf } from './util/util'
 
 export interface UpdateEdit {
@@ -17,10 +17,10 @@ export const updateAll = (textEditor?: vscode.TextEditor): UpdateEdit[] => {
 
   const document = textEditor.document
 
-  if (isPackageJson(document)) {
+  if (isSupportedDependencyFile(document)) {
     const ignorePatterns = getIgnorePattern()
 
-    const dependencies = getDependencyInformation(document.getText())
+    const dependencies = getDependencyInformation(document.getText(), document.fileName)
       .map((d) => d.deps)
       .flat()
     const edits: UpdateEdit[] = dependencies
@@ -66,9 +66,7 @@ export const updateAll = (textEditor?: vscode.TextEditor): UpdateEdit[] => {
     })
     return edits
   } else {
-    void vscode.window.showWarningMessage(
-      'Update failed: File not recognized as valid package.json',
-    )
+    void vscode.window.showWarningMessage('Update failed: File not recognized as supported')
     return []
   }
 }
